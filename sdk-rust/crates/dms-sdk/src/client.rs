@@ -2,6 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::auth::{bearer_header, AuthToken};
 use crate::error::{SdkError, SdkResult};
+use crate::models::{HealthStatus, Node, TokenResponse, UploadUrlResponse};
 use crate::models::{Node, TokenResponse, UploadUrlResponse};
 use crate::transport::{HttpRequest, HttpTransport};
 
@@ -22,6 +23,29 @@ impl<T: HttpTransport> DmsClient<T> {
 
     pub fn set_token(&mut self, token: AuthToken) {
         self.token = Some(token);
+    }
+
+    pub fn build_health_request(&self) -> HttpRequest {
+        HttpRequest {
+            method: "GET".into(),
+            path: format!("{}/healthz", self.base_url),
+            headers: BTreeMap::new(),
+            body: Vec::new(),
+        }
+    }
+
+    pub fn healthz(&self) -> SdkResult<HealthStatus> {
+        let req = self.build_health_request();
+        let res = self.transport.send(req)?;
+        if res.status >= 400 {
+            return Err(SdkError::Api {
+                status: res.status,
+                message: String::from_utf8_lossy(&res.body).to_string(),
+            });
+        }
+        Ok(HealthStatus {
+            status: "ok".into(),
+        })
     }
 
     pub fn build_token_request(
@@ -163,5 +187,63 @@ impl<T: HttpTransport> DmsClient<T> {
             .as_ref()
             .ok_or_else(|| SdkError::Auth("missing access token".into()))?;
         bearer_header(token)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transport::{HttpRequest, HttpResponse};
+    use std::sync::{Arc, Mutex};
+
+    #[derive(Clone)]
+    struct MockTransport {
+        calls: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl HttpTransport for MockTransport {
+        fn send(&self, req: HttpRequest) -> SdkResult<HttpResponse> {
+            self.calls.lock().expect("lock").push(req.path.clone());
+            Ok(HttpResponse {
+                status: 200,
+                headers: BTreeMap::new(),
+                body: b"{}".to_vec(),
+            })
+        }
+    }
+
+    #[test]
+    fn calls_health_endpoint() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let client = DmsClient::new(
+            "https://api.example.com/v1",
+            MockTransport {
+                calls: Arc::clone(&calls),
+            },
+        );
+
+        let status = client.healthz().expect("health request should succeed");
+        assert_eq!(status.status, "ok");
+
+        let logged = calls.lock().expect("lock");
+        assert_eq!(logged[0], "https://api.example.com/v1/healthz");
+    }
+
+    #[test]
+    fn calls_auth_endpoint() {
+        let calls = Arc::new(Mutex::new(Vec::new()));
+        let client = DmsClient::new(
+            "https://api.example.com/v1",
+            MockTransport {
+                calls: Arc::clone(&calls),
+            },
+        );
+
+        let _ = client
+            .exchange_token("password", Some("alice"), Some("secret"))
+            .expect("token request should succeed");
+
+        let logged = calls.lock().expect("lock");
+        assert_eq!(logged[0], "https://api.example.com/v1/auth/token");
     }
 }

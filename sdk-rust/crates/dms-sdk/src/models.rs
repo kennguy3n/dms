@@ -23,3 +23,8 @@ pub struct UploadUrlResponse {
     pub put_url: String,
     pub expires_at: String,
 }
+
+#[derive(Debug, Clone)]
+pub struct HealthStatus {
+    pub status: String,
+}

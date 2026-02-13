@@ -19,6 +19,7 @@ type pinger interface {
 func New(cfg config.Config, logger *slog.Logger, database pinger) http.Handler {
 	health := handlers.NewHealthHandler(database)
 	validator := auth.NewJWTValidator(cfg.JWTSecret)
+	authn := handlers.NewAuthHandler(cfg.JWTSecret)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
@@ -27,6 +28,9 @@ func New(cfg config.Config, logger *slog.Logger, database pinger) http.Handler {
 			return
 		case r.Method == http.MethodGet && r.URL.Path == "/readyz":
 			health.Readiness(w, r)
+			return
+		case r.Method == http.MethodPost && r.URL.Path == "/v1/auth/token":
+			authn.Token(w, r)
 			return
 		case r.Method == http.MethodGet && isTenantWhoAmIPath(r.URL.Path):
 			handler := middleware.Authn(logger, validator)(middleware.TenantScope(http.HandlerFunc(handlers.TenantWhoAmI)))
