@@ -7,3 +7,5 @@ Design artifacts for a multi-tenant, zero-knowledge document management system:
 - Crypto reference flow: `docs/crypto-flow.md`
 
 - Implementation plan (Go backend + Rust SDK): `docs/implementation-plan.md`
+
+- Rust SDK workspace: `sdk-rust/` (`dms-sdk`, `dms-crypto`)

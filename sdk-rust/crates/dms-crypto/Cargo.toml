@@ -1,0 +1,8 @@
+[package]
+name = "dms-crypto"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "dms_crypto"
+path = "src/lib.rs"

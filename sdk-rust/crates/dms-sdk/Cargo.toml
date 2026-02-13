@@ -1,0 +1,8 @@
+[package]
+name = "dms-sdk"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+name = "dms_sdk"
+path = "src/lib.rs"

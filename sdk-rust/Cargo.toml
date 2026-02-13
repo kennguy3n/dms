@@ -1,0 +1,6 @@
+[workspace]
+members = [
+  "crates/dms-sdk",
+  "crates/dms-crypto",
+]
+resolver = "2"
