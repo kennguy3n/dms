@@ -1,0 +1,386 @@
+openapi: 3.0.3
+info:
+  title: Zero-Knowledge DMS API
+  version: 0.1.0
+  description: Minimal headless API for a multi-tenant encrypted document system.
+servers:
+  - url: https://api.example.com/v1
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Tenants
+  - name: Files
+  - name: Shares
+  - name: Audit
+
+paths:
+  /auth/token:
+    post:
+      tags: [Auth]
+      summary: Exchange credentials for access token
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [grant_type]
+              properties:
+                grant_type:
+                  type: string
+                  enum: [password, refresh_token, client_credentials]
+                username:
+                  type: string
+                password:
+                  type: string
+                refresh_token:
+                  type: string
+      responses:
+        '200':
+          description: Token response
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+  /tenants/{tenantId}/files/upload-url:
+    post:
+      tags: [Files]
+      summary: Create upload session and pre-signed URL for encrypted blob
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UploadUrlRequest'
+      responses:
+        '200':
+          description: Upload URL created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UploadUrlResponse'
+
+  /tenants/{tenantId}/files/finalize:
+    post:
+      tags: [Files]
+      summary: Finalize upload and register encrypted file version + envelopes
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FinalizeUploadRequest'
+      responses:
+        '201':
+          description: File version created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FileVersion'
+
+  /tenants/{tenantId}/nodes:
+    get:
+      tags: [Files]
+      summary: List folder contents
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - in: query
+          name: parent_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Node list
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/Node'
+
+  /tenants/{tenantId}/files/{fileVersionId}/download-url:
+    post:
+      tags: [Files]
+      summary: Get pre-signed download URL + caller key envelope
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - in: path
+          name: fileVersionId
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Download URL and envelope
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DownloadUrlResponse'
+
+  /tenants/{tenantId}/shares:
+    post:
+      tags: [Shares]
+      summary: Create share link
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateShareRequest'
+      responses:
+        '201':
+          description: Share link created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ShareLink'
+
+  /tenants/{tenantId}/audit:
+    get:
+      tags: [Audit]
+      summary: List tenant audit events
+      parameters:
+        - $ref: '#/components/parameters/TenantId'
+        - in: query
+          name: cursor
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Audit events
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  items:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/AuditEvent'
+                  next_cursor:
+                    type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  parameters:
+    TenantId:
+      in: path
+      name: tenantId
+      required: true
+      schema:
+        type: string
+        format: uuid
+
+  schemas:
+    TokenResponse:
+      type: object
+      required: [access_token, token_type, expires_in]
+      properties:
+        access_token:
+          type: string
+        token_type:
+          type: string
+          example: Bearer
+        expires_in:
+          type: integer
+        refresh_token:
+          type: string
+
+    UploadUrlRequest:
+      type: object
+      required: [parent_id, encrypted_name, size_bytes, content_hash, cipher_alg]
+      properties:
+        parent_id:
+          type: string
+          format: uuid
+        encrypted_name:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        content_hash:
+          type: string
+        cipher_alg:
+          type: string
+          example: xchacha20-poly1305
+
+    UploadUrlResponse:
+      type: object
+      required: [upload_id, put_url, expires_at]
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        put_url:
+          type: string
+          format: uri
+        headers:
+          type: object
+          additionalProperties:
+            type: string
+        expires_at:
+          type: string
+          format: date-time
+
+    FinalizeUploadRequest:
+      type: object
+      required: [upload_id, encrypted_metadata, envelopes]
+      properties:
+        upload_id:
+          type: string
+          format: uuid
+        encrypted_metadata:
+          type: string
+        envelopes:
+          type: array
+          items:
+            $ref: '#/components/schemas/FileKeyEnvelopeInput'
+
+    FileKeyEnvelopeInput:
+      type: object
+      required: [principal_type, principal_id, encrypted_dek, key_wrap_alg]
+      properties:
+        principal_type:
+          type: string
+          enum: [user, group]
+        principal_id:
+          type: string
+          format: uuid
+        encrypted_dek:
+          type: string
+        key_wrap_alg:
+          type: string
+          example: x25519-xsalsa20-poly1305
+
+    Node:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        parent_id:
+          type: string
+          format: uuid
+          nullable: true
+        kind:
+          type: string
+          enum: [folder, file]
+        encrypted_name:
+          type: string
+        mime_type:
+          type: string
+        size_bytes:
+          type: integer
+          format: int64
+        updated_at:
+          type: string
+          format: date-time
+
+    FileVersion:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        node_id:
+          type: string
+          format: uuid
+        version_no:
+          type: integer
+        file_object_id:
+          type: string
+          format: uuid
+        cipher_alg:
+          type: string
+        created_at:
+          type: string
+          format: date-time
+
+    DownloadUrlResponse:
+      type: object
+      required: [get_url, envelope]
+      properties:
+        get_url:
+          type: string
+          format: uri
+        expires_at:
+          type: string
+          format: date-time
+        envelope:
+          $ref: '#/components/schemas/FileKeyEnvelopeInput'
+
+    CreateShareRequest:
+      type: object
+      required: [node_id, permission]
+      properties:
+        node_id:
+          type: string
+          format: uuid
+        permission:
+          type: string
+          enum: [view, comment, edit]
+        expires_at:
+          type: string
+          format: date-time
+        password_hash:
+          type: string
+        max_downloads:
+          type: integer
+
+    ShareLink:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        url:
+          type: string
+          format: uri
+        permission:
+          type: string
+        expires_at:
+          type: string
+          format: date-time
+          nullable: true
+
+    AuditEvent:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        action:
+          type: string
+        target_type:
+          type: string
+        target_id:
+          type: string
+          format: uuid
+        metadata:
+          type: object
+          additionalProperties: true
+        occurred_at:
+          type: string
+          format: date-time
